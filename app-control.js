@@ -19,7 +19,6 @@ const client = mqtt.connect(BROKER, {
   keepalive: 30
 });
 
-// ELEMENTOS
 const msgInput = document.getElementById("msgInput");
 const sendBtn = document.getElementById("sendBtn");
 const alertBtn = document.getElementById("alertBtn");
@@ -38,13 +37,11 @@ const btnStartCountdown = document.getElementById("btnStartCountdown");
 const btnStopCountdown = document.getElementById("btnStopCountdown");
 const btnResetCountdown = document.getElementById("btnResetCountdown");
 
-// PREVIEW
 const pClock = document.getElementById("pClock");
 const pCountdown = document.getElementById("pCountdown");
 const pMainMsg = document.getElementById("pMainMsg");
 const pNotesText = document.getElementById("pNotesText");
 
-// STATUS
 const statusEl = document.getElementById("status");
 const displayStateEl = document.getElementById("displayState");
 
@@ -52,7 +49,6 @@ function uid(){
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-// HISTÓRICO
 function addToHistory(text) {
   const div = document.createElement("div");
   div.className = "history-item";
@@ -69,18 +65,16 @@ function addToNotesHistory(text) {
   notesHistoryEl.prepend(div);
 }
 
-// PREVIEW
 function updatePreviewInstant(mainMsg, notes, countdown) {
   if (mainMsg !== undefined) pMainMsg.textContent = mainMsg;
   if (notes !== undefined) pNotesText.textContent = notes;
   if (countdown !== undefined) pCountdown.textContent = countdown;
 }
 
-// MQTT
 client.on("connect", () => {
   statusEl.textContent = `Ligado (room: ${room})`;
-  client.subscribe(TOPIC_ACK, { qos: 0 });
-  client.subscribe(TOPIC_STATE, { qos: 0 });
+  client.subscribe(TOPIC_ACK, { qos: 1 });
+  client.subscribe(TOPIC_STATE, { qos: 1 }); // ✅ estado fiável
 });
 
 client.on("reconnect", () => statusEl.textContent = "A reconectar…");
@@ -104,7 +98,6 @@ client.on("message", (topic, payload) => {
   }
 });
 
-// MENSAGEM
 sendBtn.addEventListener("click", () => sendMainMessage(msgInput.value));
 msgInput.addEventListener("keydown", e => {
   if (e.key === "Enter") sendMainMessage(msgInput.value);
@@ -113,14 +106,12 @@ msgInput.addEventListener("keydown", e => {
 function sendMainMessage(text) {
   text = (text || "").trim();
   if (!text) return;
-
-  client.publish(TOPIC_MSG, JSON.stringify({ id: uid(), text }), { qos: 0 });
+  client.publish(TOPIC_MSG, JSON.stringify({ id: uid(), text }), { qos: 1, retain: false });
   addToHistory(text);
   updatePreviewInstant(text);
   msgInput.value = "";
 }
 
-// NOTAS
 sendNotesBtn.addEventListener("click", () => sendNotes(notesInput.value));
 notesInput.addEventListener("keydown", e => {
   if (e.key === "Enter") { e.preventDefault(); sendNotes(notesInput.value); }
@@ -129,48 +120,41 @@ notesInput.addEventListener("keydown", e => {
 function sendNotes(text) {
   text = (text || "").trim();
   if (!text) text = "Sem notas.";
-
-  client.publish(TOPIC_NOTES, JSON.stringify({ id: uid(), text }), { qos: 0 });
+  client.publish(TOPIC_NOTES, JSON.stringify({ id: uid(), text }), { qos: 1, retain: false });
   addToNotesHistory(text);
   updatePreviewInstant(undefined, text);
   notesInput.value = "";
 }
 
-// ALERTA NOTAS (só pisca)
 alertNotesBtn.addEventListener("click", () => {
-  client.publish(TOPIC_NOTES_ALERT, JSON.stringify({ id: uid(), action: "alertNotes" }), { qos: 0 });
+  client.publish(TOPIC_NOTES_ALERT, JSON.stringify({ id: uid(), action: "alertNotes" }), { qos: 1, retain: false });
 });
 
-// ALERTA GERAL (só pisca no centro)
 alertBtn.addEventListener("click", () => {
-  client.publish(TOPIC_ALERT, JSON.stringify({ id: uid(), action: "alert" }), { qos: 0 });
+  client.publish(TOPIC_ALERT, JSON.stringify({ id: uid(), action: "alert" }), { qos: 1, retain: false });
 });
 
-// COUNTDOWN
 btnSetCountdown.addEventListener("click", () => {
   const minutes = parseInt(countdownInput.value, 10);
   if (isNaN(minutes) || minutes < 0) return;
-
   const seconds = minutes * 60;
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "set", seconds }), { qos: 0 });
-
+  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "set", seconds }), { qos: 1, retain: false });
   const m = String(minutes).padStart(2, "0");
   updatePreviewInstant(undefined, undefined, `${m}:00`);
 });
 
 btnStartCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "start" }), { qos: 0 });
+  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "start" }), { qos: 1, retain: false });
 });
 btnStopCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "stop" }), { qos: 0 });
+  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "stop" }), { qos: 1, retain: false });
 });
 btnResetCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "reset" }), { qos: 0 });
+  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "reset" }), { qos: 1, retain: false });
   updatePreviewInstant(undefined, undefined, "--:--");
 });
 
-// RESET TOTAL
 resetAllBtn.addEventListener("click", () => {
-  client.publish(TOPIC_RESET, JSON.stringify({ id: uid(), action: "resetAll" }), { qos: 0 });
+  client.publish(TOPIC_RESET, JSON.stringify({ id: uid(), action: "resetAll" }), { qos: 1, retain: false });
   updatePreviewInstant("Aguardando…", "Sem notas.", "--:--");
 });
