@@ -3,19 +3,19 @@ const room = params.get("room") || "default";
 
 const BROKER = "wss://test.mosquitto.org:8081/mqtt";
 
-const TOPIC_MSG = `speaker/messages/${room}`;
-const TOPIC_ACK = `speaker/ack/${room}`;
-const TOPIC_NOTES = `speaker/notes/${room}`;
+const TOPIC_MSG         = `speaker/messages/${room}`;
+const TOPIC_ACK         = `speaker/ack/${room}`;
+const TOPIC_NOTES       = `speaker/notes/${room}`;
 const TOPIC_NOTES_ALERT = `speaker/notesAlert/${room}`;
-const TOPIC_COUNTDOWN = `speaker/countdown/${room}`;
-const TOPIC_ALERT = `speaker/alert/${room}`;
-const TOPIC_STATE = `speaker/state/${room}`;
-const TOPIC_RESET = `speaker/reset/${room}`;
+const TOPIC_COUNTDOWN   = `speaker/countdown/${room}`;
+const TOPIC_ALERT       = `speaker/alert/${room}`;
+const TOPIC_STATE       = `speaker/state/${room}`;
+const TOPIC_RESET       = `speaker/reset/${room}`;
 
 const client = mqtt.connect(BROKER, {
   clientId: "control_" + Math.random().toString(16).slice(2),
   clean: true,
-  reconnectPeriod: 800,
+  reconnectPeriod: 500,
   keepalive: 30
 });
 
@@ -48,9 +48,6 @@ const pNotesText = document.getElementById("pNotesText");
 const statusEl = document.getElementById("status");
 const displayStateEl = document.getElementById("displayState");
 
-let lastNotesText = "Sem notas.";
-
-// IDs para reduzir duplicados (ajuda muito com reconnect/QoS)
 function uid(){
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
@@ -72,6 +69,13 @@ function addToNotesHistory(text) {
   notesHistoryEl.prepend(div);
 }
 
+// PREVIEW
+function updatePreviewInstant(mainMsg, notes, countdown) {
+  if (mainMsg !== undefined) pMainMsg.textContent = mainMsg;
+  if (notes !== undefined) pNotesText.textContent = notes;
+  if (countdown !== undefined) pCountdown.textContent = countdown;
+}
+
 // MQTT
 client.on("connect", () => {
   statusEl.textContent = `Ligado (room: ${room})`;
@@ -84,14 +88,12 @@ client.on("close", () => statusEl.textContent = "Ligação perdida…");
 client.on("offline", () => statusEl.textContent = "Servidor offline…");
 client.on("error", () => statusEl.textContent = "Erro de ligação ao servidor.");
 
-// RECEBER ESTADO DO DISPLAY
 client.on("message", (topic, payload) => {
   let data;
   try { data = JSON.parse(payload.toString()); } catch { return; }
 
   if (topic === TOPIC_ACK) {
     if (data.status === "online") displayStateEl.textContent = "Display online.";
-    if (data.status === "received") displayStateEl.textContent = `Entregue: "${data.text}"`;
   }
 
   if (topic === TOPIC_STATE) {
@@ -102,14 +104,7 @@ client.on("message", (topic, payload) => {
   }
 });
 
-// PREVIEW INSTANTÂNEA
-function updatePreviewInstant(mainMsg, notes, countdown) {
-  if (mainMsg !== undefined) pMainMsg.textContent = mainMsg;
-  if (notes !== undefined) pNotesText.textContent = notes;
-  if (countdown !== undefined) pCountdown.textContent = countdown;
-}
-
-// MENSAGEM PRINCIPAL
+// MENSAGEM
 sendBtn.addEventListener("click", () => sendMainMessage(msgInput.value));
 msgInput.addEventListener("keydown", e => {
   if (e.key === "Enter") sendMainMessage(msgInput.value);
@@ -126,31 +121,27 @@ function sendMainMessage(text) {
 }
 
 // NOTAS
-sendNotesBtn.addEventListener("click", () => sendNotes(notesInput.value.trim()));
+sendNotesBtn.addEventListener("click", () => sendNotes(notesInput.value));
 notesInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    sendNotes(notesInput.value.trim());
-  }
+  if (e.key === "Enter") { e.preventDefault(); sendNotes(notesInput.value); }
 });
 
 function sendNotes(text) {
   text = (text || "").trim();
   if (!text) text = "Sem notas.";
 
-  lastNotesText = text;
   client.publish(TOPIC_NOTES, JSON.stringify({ id: uid(), text }), { qos: 0 });
   addToNotesHistory(text);
   updatePreviewInstant(undefined, text);
   notesInput.value = "";
 }
 
-// ALERTA NOTAS (pisca e mantém texto)
+// ALERTA NOTAS (só pisca)
 alertNotesBtn.addEventListener("click", () => {
   client.publish(TOPIC_NOTES_ALERT, JSON.stringify({ id: uid(), action: "alertNotes" }), { qos: 0 });
 });
 
-// ALERTA GERAL (pisca vermelho na área da mensagem)
+// ALERTA GERAL (só pisca no centro)
 alertBtn.addEventListener("click", () => {
   client.publish(TOPIC_ALERT, JSON.stringify({ id: uid(), action: "alert" }), { qos: 0 });
 });
@@ -170,11 +161,9 @@ btnSetCountdown.addEventListener("click", () => {
 btnStartCountdown.addEventListener("click", () => {
   client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "start" }), { qos: 0 });
 });
-
 btnStopCountdown.addEventListener("click", () => {
   client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "stop" }), { qos: 0 });
 });
-
 btnResetCountdown.addEventListener("click", () => {
   client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "reset" }), { qos: 0 });
   updatePreviewInstant(undefined, undefined, "--:--");
@@ -183,7 +172,5 @@ btnResetCountdown.addEventListener("click", () => {
 // RESET TOTAL
 resetAllBtn.addEventListener("click", () => {
   client.publish(TOPIC_RESET, JSON.stringify({ id: uid(), action: "resetAll" }), { qos: 0 });
-
-  // preview imediato no control
   updatePreviewInstant("Aguardando…", "Sem notas.", "--:--");
 });
