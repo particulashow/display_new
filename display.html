@@ -8,7 +8,9 @@
     :root {
       --bg-normal: #000000;
       --bg-alert: #8b0000;
+
       --notes-alert: #ff8800;
+      --msg-alert: #8b0000;
 
       --text-normal: #ffffff;
       --divider: rgba(255,255,255,0.25);
@@ -58,20 +60,35 @@
       align-items: center;
       border-left: 1px solid var(--divider);
       border-right: 1px solid var(--divider);
+      position: relative;
+      overflow: hidden;
     }
 
     #mainMsg {
       font-size: 4vw;
       max-width: 90%;
       text-align: center;
+      padding: 18px 24px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
     }
 
-    .blink {
-      animation: blinkAnim 0.4s steps(2, start) 3s;
+    /* ALERTA mensagem (pisca vermelho só no center) */
+    .msg-bg-blink{
+      animation: msgBgBlink 3s linear forwards;
     }
-
-    @keyframes blinkAnim {
-      50% { opacity: 0; }
+    @keyframes msgBgBlink{
+      0%   { background-color: transparent; }
+      10%  { background-color: var(--msg-alert); }
+      20%  { background-color: transparent; }
+      30%  { background-color: var(--msg-alert); }
+      40%  { background-color: transparent; }
+      50%  { background-color: var(--msg-alert); }
+      60%  { background-color: transparent; }
+      70%  { background-color: var(--msg-alert); }
+      80%  { background-color: transparent; }
+      90%  { background-color: var(--msg-alert); }
+      100% { background-color: transparent; }
     }
 
     /* RIGHT – NOTAS */
