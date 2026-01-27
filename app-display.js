@@ -1,13 +1,6 @@
 const params = new URLSearchParams(location.search);
 const room = params.get("room") || "default";
 
-/*
-  IMPORTANTE:
-  Se deixares "default", num broker público podes apanhar mensagens de outras pessoas.
-  Recomendo mesmo usares sempre um room único:
-  ?room=evento_2026_01_27
-*/
-
 const BROKER = "wss://test.mosquitto.org:8081/mqtt";
 
 const TOPIC_MSG         = `speaker/messages/${room}`;
@@ -37,10 +30,8 @@ const countdownEl = document.getElementById("countdown");
 let countdownSeconds = null;
 let countdownInterval = null;
 
-/* DEDUPE POR ID (resolve duplicados e reduz “fantasmas” de reconnect/QoS)
-   Mantém cache curta para não crescer.
-*/
-const seen = new Map(); // id -> ts
+// DEDUPE por ID
+const seen = new Map();
 const SEEN_TTL_MS = 60_000;
 
 function gcSeen(){
@@ -51,13 +42,11 @@ function gcSeen(){
 }
 
 function markAndCheckId(data){
-  // se não tiver id, não dedupe (pode vir de terceiros)
   const id = data && data.id;
   if (!id) return false;
-  const t = Date.now();
   gcSeen();
   if (seen.has(id)) return true;
-  seen.set(id, t);
+  seen.set(id, Date.now());
   return false;
 }
 
@@ -107,7 +96,7 @@ function triggerMsgAlert() {
   setTimeout(() => centerEl.classList.remove("msg-bg-blink"), 3100);
 }
 
-// RESET TOTAL
+// RESET
 function resetAll() {
   mainMsgEl.textContent = "Aguardando mensagem…";
   notesTextEl.textContent = "Sem notas.";
@@ -122,27 +111,34 @@ function resetAll() {
   publishState();
 }
 
-// ESTADO
+// STATE (✅ QoS 1 + retain)
 function publishState() {
+  if (!client || !client.connected) return;
+
   const state = {
     clock: clockEl.textContent,
     countdown: countdownEl.textContent,
     mainMsg: mainMsgEl.textContent,
     notes: notesTextEl.textContent
   };
-  client.publish(TOPIC_STATE, JSON.stringify(state), { qos: 0 });
+
+  client.publish(
+    TOPIC_STATE,
+    JSON.stringify(state),
+    { qos: 1, retain: true }
+  );
 }
 
 // MQTT
 client.on("connect", () => {
-  client.subscribe(TOPIC_MSG,         { qos: 0 });
-  client.subscribe(TOPIC_NOTES,       { qos: 0 });
-  client.subscribe(TOPIC_NOTES_ALERT, { qos: 0 });
-  client.subscribe(TOPIC_COUNTDOWN,   { qos: 0 });
-  client.subscribe(TOPIC_ALERT,       { qos: 0 });
-  client.subscribe(TOPIC_RESET,       { qos: 0 });
+  client.subscribe(TOPIC_MSG,         { qos: 1 });
+  client.subscribe(TOPIC_NOTES,       { qos: 1 });
+  client.subscribe(TOPIC_NOTES_ALERT, { qos: 1 });
+  client.subscribe(TOPIC_COUNTDOWN,   { qos: 1 });
+  client.subscribe(TOPIC_ALERT,       { qos: 1 });
+  client.subscribe(TOPIC_RESET,       { qos: 1 });
 
-  client.publish(TOPIC_ACK, JSON.stringify({ status: "online", room }), { qos: 0 });
+  client.publish(TOPIC_ACK, JSON.stringify({ status: "online", room }), { qos: 1, retain: false });
   publishState();
 });
 
@@ -151,10 +147,8 @@ client.on("message", (topic, payload) => {
   try { data = JSON.parse(payload.toString()); }
   catch { return; }
 
-  // ignora duplicados por id
   if (markAndCheckId(data)) return;
 
-  // Mensagem principal
   if (topic === TOPIC_MSG) {
     if (typeof data.text !== "string") return;
     mainMsgEl.textContent = data.text;
@@ -163,7 +157,6 @@ client.on("message", (topic, payload) => {
     return;
   }
 
-  // Notas
   if (topic === TOPIC_NOTES) {
     if (typeof data.text !== "string") return;
     notesTextEl.textContent = data.text || "Sem notas.";
@@ -172,21 +165,18 @@ client.on("message", (topic, payload) => {
     return;
   }
 
-  // Alerta notas (só pisca, não altera texto)
   if (topic === TOPIC_NOTES_ALERT) {
     if (data.action !== "alertNotes") return;
     triggerNotesAlert();
     return;
   }
 
-  // Alerta geral (só pisca no centro, não altera texto)
   if (topic === TOPIC_ALERT) {
     if (data.action !== "alert") return;
     triggerMsgAlert();
     return;
   }
 
-  // Countdown
   if (topic === TOPIC_COUNTDOWN) {
     if (typeof data.action !== "string") return;
 
@@ -210,7 +200,6 @@ client.on("message", (topic, payload) => {
     }
   }
 
-  // Reset total
   if (topic === TOPIC_RESET) {
     if (data.action !== "resetAll") return;
     resetAll();
