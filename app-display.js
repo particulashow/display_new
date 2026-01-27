@@ -1,201 +1,172 @@
-const params = new URLSearchParams(location.search);
-const room = params.get("room") || "default";
+(() => {
+  const params = new URLSearchParams(location.search);
+  const room = (params.get("room") || "default").trim();
 
-const BROKER = "wss://test.mosquitto.org:8081/mqtt";
+  // Opcional: podes passar ?broker=wss%3A%2F%2F...
+  const BROKER = params.get("broker") || "wss://test.mosquitto.org:8081/mqtt";
 
-const TOPIC_MSG = `speaker/messages/${room}`;
-const TOPIC_ACK = `speaker/ack/${room}`;
-const TOPIC_NOTES = `speaker/notes/${room}`;
-const TOPIC_NOTES_ALERT = `speaker/notesAlert/${room}`;
-const TOPIC_COUNTDOWN = `speaker/countdown/${room}`;
-const TOPIC_ALERT = `speaker/alert/${room}`;
-const TOPIC_STATE = `speaker/state/${room}`;
+  const TOPIC_MSG = `speaker/messages/${room}`;
+  const TOPIC_ACK = `speaker/ack/${room}`;
+  const TOPIC_NOTES = `speaker/notes/${room}`;
+  const TOPIC_NOTES_ALERT = `speaker/notesAlert/${room}`;
+  const TOPIC_COUNTDOWN = `speaker/countdown/${room}`;
+  const TOPIC_ALERT = `speaker/alert/${room}`;
+  const TOPIC_STATE = `speaker/state/${room}`;
 
-const mainMsgEl = document.getElementById("mainMsg");
-const notesTextEl = document.getElementById("notesText");
-const notesBoxEl = document.getElementById("right");
-const clockEl = document.getElementById("clock");
-const countdownEl = document.getElementById("countdown");
+  const client = mqtt.connect(BROKER, {
+    clientId: "display_" + Math.random().toString(16).slice(2),
+    clean: true,
+    reconnectPeriod: 2000,
+    connectTimeout: 8000
+  });
 
-let countdownSeconds = null;
-let countdownInterval = null;
-let isConnected = false;
+  // ELEMENTOS
+  const mainMsgEl = document.getElementById("mainMsg");
+  const notesTextEl = document.getElementById("notesText");
+  const notesBoxEl = document.getElementById("right");
+  const clockEl = document.getElementById("clock");
+  const countdownEl = document.getElementById("countdown");
 
-// MQTT client
-const client = mqtt.connect(BROKER, {
-  clientId: "display_" + Math.random().toString(16).slice(2),
-  clean: true,
-  reconnectPeriod: 2000,
-  connectTimeout: 8000,
-  will: {
-    topic: TOPIC_ACK,
-    payload: JSON.stringify({ status: "offline", ts: Date.now() }),
-    qos: 0,
-    retain: false
+  let countdownSeconds = null;
+  let countdownInterval = null;
+
+  // Debounce de publishState (evita spam)
+  let stateTimer = null;
+  function requestStatePublish(){
+    clearTimeout(stateTimer);
+    stateTimer = setTimeout(publishState, 120);
   }
-});
 
-function safeJSON(payload){
-  try { return JSON.parse(payload.toString()); }
-  catch { return null; }
-}
-
-function setAlert(on){
-  document.body.classList.toggle("alert", !!on);
-}
-
-function pulseMain(){
-  mainMsgEl.classList.remove("pulse");
-  // força reflow para reiniciar animação
-  void mainMsgEl.offsetWidth;
-  mainMsgEl.classList.add("pulse");
-}
-
-function flashNotes(){
-  notesBoxEl.classList.remove("notesFlash");
-  void notesBoxEl.offsetWidth;
-  notesBoxEl.classList.add("notesFlash");
-}
-
-function renderCountdown(){
-  if (countdownSeconds === null || typeof countdownSeconds !== "number"){
-    countdownEl.textContent = "--:--";
-    return;
-  }
-  const m = Math.floor(countdownSeconds / 60);
-  const s = countdownSeconds % 60;
-  countdownEl.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-}
-
-function startCountdown(){
-  stopCountdown();
-  countdownInterval = setInterval(() => {
-    if (typeof countdownSeconds === "number" && countdownSeconds > 0){
-      countdownSeconds--;
-      renderCountdown();
-      publishState();
-    }
+  // RELÓGIO
+  setInterval(() => {
+    const now = new Date();
+    clockEl.textContent = now.toLocaleTimeString("pt-PT");
+    requestStatePublish();
   }, 1000);
-}
 
-function stopCountdown(){
-  if (countdownInterval) clearInterval(countdownInterval);
-  countdownInterval = null;
-}
+  // COUNTDOWN
+  function renderCountdown(){
+    if (countdownSeconds === null){
+      countdownEl.textContent = "--:--";
+      return;
+    }
+    const m = Math.floor(countdownSeconds / 60);
+    const s = countdownSeconds % 60;
+    countdownEl.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
 
-// Estado (para preview no control)
-let publishQueued = false;
-function publishState(){
-  if (!isConnected) return;
-  if (publishQueued) return;
-  publishQueued = true;
+  function startCountdown(){
+    clearInterval(countdownInterval);
+    countdownInterval = setInterval(() => {
+      if (countdownSeconds === null) return;
+      if (countdownSeconds > 0) countdownSeconds--;
+      renderCountdown();
+      requestStatePublish();
+    }, 1000);
+  }
 
-  // throttling leve
-  setTimeout(() => {
-    publishQueued = false;
+  function stopCountdown(){
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
+
+  // ALERTAS
+  function triggerMainAlert(){
+    document.body.style.background = "var(--bg-alert)";
+    mainMsgEl.classList.add("blink");
+    setTimeout(() => {
+      document.body.style.background = "var(--bg-normal)";
+      mainMsgEl.classList.remove("blink");
+    }, 3000);
+  }
+
+  function triggerNotesAlert(){
+    notesBoxEl.classList.add("notes-bg-blink");
+    setTimeout(() => notesBoxEl.classList.remove("notes-bg-blink"), 2000);
+  }
+
+  function triggerGlobalAlert(){
+    document.body.style.background = "var(--bg-alert)";
+    setTimeout(() => {
+      document.body.style.background = "var(--bg-normal)";
+    }, 3000);
+  }
+
+  // ESTADO PARA PREVIEW (retained)
+  function publishState(){
+    if (!client.connected) return;
     const state = {
-      ts: Date.now(),
+      room,
       clock: clockEl.textContent,
       countdown: countdownEl.textContent,
       mainMsg: mainMsgEl.textContent,
       notes: notesTextEl.textContent
     };
-    client.publish(TOPIC_STATE, JSON.stringify(state), { retain: false, qos: 0 });
-  }, 120);
-}
-
-// Relógio
-setInterval(() => {
-  const now = new Date();
-  clockEl.textContent = now.toLocaleTimeString("pt-PT");
-  publishState();
-}, 1000);
-
-// MQTT events
-client.on("connect", () => {
-  isConnected = true;
-
-  client.subscribe([
-    TOPIC_MSG,
-    TOPIC_NOTES,
-    TOPIC_NOTES_ALERT,
-    TOPIC_COUNTDOWN,
-    TOPIC_ALERT
-  ]);
-
-  client.publish(TOPIC_ACK, JSON.stringify({ status: "online", ts: Date.now() }), { qos: 0, retain: false });
-  publishState();
-});
-
-client.on("reconnect", () => {
-  isConnected = false;
-});
-
-client.on("close", () => {
-  isConnected = false;
-});
-
-client.on("message", (topic, payload) => {
-  const data = safeJSON(payload);
-  if (!data) return;
-
-  if (topic === TOPIC_MSG){
-    mainMsgEl.textContent = data.text ?? "";
-    pulseMain();
-    setAlert(true);
-    setTimeout(() => setAlert(false), 1200);
-    publishState();
-    return;
+    client.publish(TOPIC_STATE, JSON.stringify(state), { qos: 1, retain: true });
   }
 
-  if (topic === TOPIC_NOTES){
-    notesTextEl.textContent = (data.text && String(data.text).trim()) ? data.text : "Sem notas.";
-    flashNotes();
-    publishState();
-    return;
+  function safeJSON(payload){
+    try { return JSON.parse(payload.toString()); }
+    catch { return null; }
   }
 
-  if (topic === TOPIC_NOTES_ALERT){
-    flashNotes();
+  // MQTT
+  client.on("connect", () => {
+    client.subscribe([TOPIC_MSG, TOPIC_NOTES, TOPIC_NOTES_ALERT, TOPIC_COUNTDOWN, TOPIC_ALERT], { qos: 1 });
+
+    // ACK retained (o control consegue ver o display “online” mesmo entrando depois)
+    client.publish(TOPIC_ACK, JSON.stringify({ status: "online", room }), { qos: 1, retain: true });
+
     publishState();
-    return;
-  }
+  });
 
-  if (topic === TOPIC_COUNTDOWN){
-    const action = data.action;
+  client.on("message", (topic, payload) => {
+    const data = safeJSON(payload);
+    if (!data) return;
 
-    if (action === "set"){
-      const secs = Number(data.seconds);
-      countdownSeconds = Number.isFinite(secs) ? Math.max(0, Math.floor(secs)) : null;
-      renderCountdown();
-      publishState();
+    if (topic === TOPIC_MSG) {
+      mainMsgEl.textContent = (data.text ?? "").toString() || " ";
+      triggerMainAlert();
+      requestStatePublish();
       return;
     }
 
-    if (action === "start"){
-      if (countdownSeconds !== null) startCountdown();
-      publishState();
+    if (topic === TOPIC_NOTES) {
+      notesTextEl.textContent = (data.text ?? "").toString() || "Sem notas.";
+      triggerNotesAlert();
+      requestStatePublish();
       return;
     }
 
-    if (action === "stop"){
-      stopCountdown();
-      publishState();
+    if (topic === TOPIC_NOTES_ALERT) {
+      triggerNotesAlert();
+      requestStatePublish();
       return;
     }
 
-    if (action === "reset"){
-      countdownSeconds = null;
-      stopCountdown();
-      renderCountdown();
-      publishState();
+    if (topic === TOPIC_COUNTDOWN) {
+      const action = data.action;
+      if (action === "set") {
+        const sec = Number(data.seconds);
+        countdownSeconds = Number.isFinite(sec) ? Math.max(0, Math.floor(sec)) : null;
+        renderCountdown();
+        requestStatePublish();
+      }
+      if (action === "start") startCountdown();
+      if (action === "stop") stopCountdown();
+      if (action === "reset") {
+        countdownSeconds = null;
+        stopCountdown();
+        renderCountdown();
+        requestStatePublish();
+      }
       return;
     }
-  }
 
-  if (topic === TOPIC_ALERT){
-    setAlert(true);
-    setTimeout(() => setAlert(false), 1400);
-    publishState();
-  }
-});
+    if (topic === TOPIC_ALERT) {
+      triggerGlobalAlert();
+      requestStatePublish();
+      return;
+    }
+  });
+})();
