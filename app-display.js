@@ -3,205 +3,194 @@ const room = params.get("room") || "default";
 
 const BROKER = "wss://test.mosquitto.org:8081/mqtt";
 
-const TOPIC_MSG         = `speaker/messages/${room}`;
-const TOPIC_ACK         = `speaker/ack/${room}`;
-const TOPIC_NOTES       = `speaker/notes/${room}`;
+const TOPIC_MSG = `speaker/messages/${room}`;
+const TOPIC_ACK = `speaker/ack/${room}`;
+const TOPIC_NOTES = `speaker/notes/${room}`;
 const TOPIC_NOTES_ALERT = `speaker/notesAlert/${room}`;
-const TOPIC_COUNTDOWN   = `speaker/countdown/${room}`;
-const TOPIC_ALERT       = `speaker/alert/${room}`;
-const TOPIC_STATE       = `speaker/state/${room}`;
-const TOPIC_RESET       = `speaker/reset/${room}`;
+const TOPIC_COUNTDOWN = `speaker/countdown/${room}`;
+const TOPIC_ALERT = `speaker/alert/${room}`;
+const TOPIC_STATE = `speaker/state/${room}`;
+const TOPIC_RESET = `speaker/reset/${room}`;
 
 const client = mqtt.connect(BROKER, {
   clientId: "display_" + Math.random().toString(16).slice(2),
   clean: true,
   reconnectPeriod: 500,
-  keepalive: 30
+  keepalive: 30,
+  // ajuda em redes instáveis
+  resubscribe: true
 });
 
 // ELEMENTOS
-const mainMsgEl   = document.getElementById("mainMsg");
+const mainMsgEl = document.getElementById("mainMsg");
 const notesTextEl = document.getElementById("notesText");
-const notesBoxEl  = document.getElementById("right");
-const centerEl    = document.getElementById("center");
-const clockEl     = document.getElementById("clock");
+const notesBoxEl = document.getElementById("right");
+const clockEl = document.getElementById("clock");
 const countdownEl = document.getElementById("countdown");
 
-let countdownSeconds = null;
-let countdownInterval = null;
+// COUNTDOWN (robusto)
+let countdownEndAt = null;   // timestamp ms
+let countdownRunning = false;
 
-// DEDUPE por ID
-const seen = new Map();
-const SEEN_TTL_MS = 60_000;
-
-function gcSeen(){
-  const t = Date.now();
-  for (const [id, ts] of seen.entries()){
-    if (t - ts > SEEN_TTL_MS) seen.delete(id);
-  }
+// UTILS
+function nowPT() {
+  return new Date().toLocaleTimeString("pt-PT");
 }
 
-function markAndCheckId(data){
-  const id = data && data.id;
-  if (!id) return false;
-  gcSeen();
-  if (seen.has(id)) return true;
-  seen.set(id, Date.now());
-  return false;
+function remainingSeconds() {
+  if (!countdownEndAt) return null;
+  const ms = countdownEndAt - Date.now();
+  return Math.max(0, Math.ceil(ms / 1000));
 }
 
-// RELÓGIO
-setInterval(() => {
-  clockEl.textContent = new Date().toLocaleTimeString("pt-PT");
-  publishState();
-}, 1000);
-
-// COUNTDOWN
 function renderCountdown() {
-  if (countdownSeconds === null) {
+  if (!countdownEndAt) {
     countdownEl.textContent = "--:--";
     return;
   }
-  const m = Math.floor(countdownSeconds / 60);
-  const s = countdownSeconds % 60;
-  countdownEl.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  const secs = remainingSeconds();
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  countdownEl.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function startCountdown() {
-  clearInterval(countdownInterval);
-  countdownInterval = setInterval(() => {
-    if (typeof countdownSeconds === "number" && countdownSeconds > 0) countdownSeconds--;
-    renderCountdown();
-    publishState();
-  }, 1000);
-}
-
-function stopCountdown() {
-  clearInterval(countdownInterval);
-  countdownInterval = null;
-}
-
-// ALERTAS
-function triggerNotesAlert() {
-  notesBoxEl.classList.remove("notes-bg-blink");
-  void notesBoxEl.offsetWidth;
-  notesBoxEl.classList.add("notes-bg-blink");
-  setTimeout(() => notesBoxEl.classList.remove("notes-bg-blink"), 3100);
-}
-
-function triggerMsgAlert() {
-  centerEl.classList.remove("msg-bg-blink");
-  void centerEl.offsetWidth;
-  centerEl.classList.add("msg-bg-blink");
-  setTimeout(() => centerEl.classList.remove("msg-bg-blink"), 3100);
-}
-
-// RESET
-function resetAll() {
-  mainMsgEl.textContent = "Aguardando mensagem…";
-  notesTextEl.textContent = "Sem notas.";
-
-  countdownSeconds = null;
-  stopCountdown();
-  renderCountdown();
-
-  notesBoxEl.classList.remove("notes-bg-blink");
-  centerEl.classList.remove("msg-bg-blink");
-
-  publishState();
-}
-
-// STATE (✅ QoS 1 + retain)
 function publishState() {
-  if (!client || !client.connected) return;
-
+  // QoS 0 para não criar filas no broker
   const state = {
+    ts: Date.now(),
     clock: clockEl.textContent,
     countdown: countdownEl.textContent,
+    // também mando dados “reais” do countdown
+    countdownEndAt,
+    countdownRunning,
     mainMsg: mainMsgEl.textContent,
     notes: notesTextEl.textContent
   };
+  client.publish(TOPIC_STATE, JSON.stringify(state), { qos: 0, retain: false });
+}
 
-  client.publish(
-    TOPIC_STATE,
-    JSON.stringify(state),
-    { qos: 1, retain: true }
-  );
+// RELÓGIO + LOOP DE ESTADO (1Hz)
+setInterval(() => {
+  clockEl.textContent = nowPT();
+
+  // countdown corre “por endAt”, não por seconds--
+  if (countdownRunning && countdownEndAt) {
+    if (remainingSeconds() <= 0) {
+      countdownRunning = false; // terminou
+    }
+  }
+  renderCountdown();
+  publishState();
+}, 1000);
+
+// ALERTAS
+function triggerMainAlert() {
+  // só na mensagem (não muda fundo geral)
+  mainMsgEl.classList.add("blink");
+  setTimeout(() => mainMsgEl.classList.remove("blink"), 3000);
+}
+
+function triggerNotesAlert() {
+  notesBoxEl.classList.add("notes-bg-blink");
+  setTimeout(() => notesBoxEl.classList.remove("notes-bg-blink"), 3000);
+}
+
+function triggerGlobalAlert() {
+  // pisca só na zona da mensagem mantendo vermelho
+  mainMsgEl.classList.add("blink");
+  setTimeout(() => mainMsgEl.classList.remove("blink"), 3000);
 }
 
 // MQTT
 client.on("connect", () => {
-  client.subscribe(TOPIC_MSG,         { qos: 1 });
-  client.subscribe(TOPIC_NOTES,       { qos: 1 });
+  client.subscribe(TOPIC_MSG, { qos: 1 });
+  client.subscribe(TOPIC_NOTES, { qos: 1 });
   client.subscribe(TOPIC_NOTES_ALERT, { qos: 1 });
-  client.subscribe(TOPIC_COUNTDOWN,   { qos: 1 });
-  client.subscribe(TOPIC_ALERT,       { qos: 1 });
-  client.subscribe(TOPIC_RESET,       { qos: 1 });
+  client.subscribe(TOPIC_COUNTDOWN, { qos: 1 });
+  client.subscribe(TOPIC_ALERT, { qos: 1 });
+  client.subscribe(TOPIC_RESET, { qos: 1 });
 
-  client.publish(TOPIC_ACK, JSON.stringify({ status: "online", room }), { qos: 1, retain: false });
+  client.publish(TOPIC_ACK, JSON.stringify({ status: "online", ts: Date.now() }), { qos: 1, retain: false });
   publishState();
 });
 
 client.on("message", (topic, payload) => {
   let data;
-  try { data = JSON.parse(payload.toString()); }
-  catch { return; }
-
-  if (markAndCheckId(data)) return;
+  try { data = JSON.parse(payload.toString()); } catch { return; }
 
   if (topic === TOPIC_MSG) {
-    if (typeof data.text !== "string") return;
-    mainMsgEl.textContent = data.text;
-    triggerMsgAlert();
+    mainMsgEl.textContent = data.text ?? "";
+    triggerMainAlert();
     publishState();
     return;
   }
 
   if (topic === TOPIC_NOTES) {
-    if (typeof data.text !== "string") return;
-    notesTextEl.textContent = data.text || "Sem notas.";
+    notesTextEl.textContent = (data.text && String(data.text).trim()) ? data.text : "Sem notas.";
     triggerNotesAlert();
     publishState();
     return;
   }
 
   if (topic === TOPIC_NOTES_ALERT) {
-    if (data.action !== "alertNotes") return;
+    // só alerta visual, sem alterar texto
     triggerNotesAlert();
-    return;
-  }
-
-  if (topic === TOPIC_ALERT) {
-    if (data.action !== "alert") return;
-    triggerMsgAlert();
+    publishState();
     return;
   }
 
   if (topic === TOPIC_COUNTDOWN) {
-    if (typeof data.action !== "string") return;
-
+    // Protocolo robusto:
+    // set -> define endAt; start -> running=true; stop -> running=false; reset -> limpa
     if (data.action === "set") {
-      countdownSeconds = Number(data.seconds);
-      if (!Number.isFinite(countdownSeconds) || countdownSeconds < 0) countdownSeconds = 0;
+      if (Number.isFinite(Number(data.endAt))) {
+        countdownEndAt = Number(data.endAt);
+      } else if (Number.isFinite(Number(data.seconds))) {
+        countdownEndAt = Date.now() + Number(data.seconds) * 1000;
+      }
+      countdownRunning = false;
       renderCountdown();
       publishState();
       return;
     }
 
-    if (data.action === "start") { startCountdown(); return; }
-    if (data.action === "stop")  { stopCountdown(); return; }
+    if (data.action === "start") {
+      if (countdownEndAt) countdownRunning = true;
+      publishState();
+      return;
+    }
+
+    if (data.action === "stop") {
+      countdownRunning = false;
+      publishState();
+      return;
+    }
 
     if (data.action === "reset") {
-      countdownSeconds = null;
-      stopCountdown();
+      countdownEndAt = null;
+      countdownRunning = false;
       renderCountdown();
       publishState();
       return;
     }
+
+    return;
+  }
+
+  if (topic === TOPIC_ALERT) {
+    triggerGlobalAlert();
+    publishState();
+    return;
   }
 
   if (topic === TOPIC_RESET) {
-    if (data.action !== "resetAll") return;
-    resetAll();
+    // reset total
+    mainMsgEl.textContent = "Aguardando mensagem…";
+    notesTextEl.textContent = "Sem notas.";
+    countdownEndAt = null;
+    countdownRunning = false;
+    renderCountdown();
+    publishState();
+    return;
   }
 });
