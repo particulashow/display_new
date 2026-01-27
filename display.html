@@ -66,7 +66,6 @@
       font-size: 4vw;
       max-width: 90%;
       text-align: center;
-      /* sem fundo / sem sombra */
       padding: 0;
       border-radius: 0;
       background: transparent;
@@ -101,9 +100,12 @@
     }
 
     #notesTitle {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 1.4vw;
-      opacity: 0.8;
+      opacity: 0.85;
+      text-decoration: underline; /* ✅ sublinhado */
+      text-underline-offset: 6px;
+      text-decoration-thickness: 2px;
     }
 
     #notesText {
@@ -115,7 +117,6 @@
     .notes-bg-blink {
       animation: notesBgBlink 3s linear forwards;
     }
-
     @keyframes notesBgBlink {
       0%   { background-color: transparent; }
       10%  { background-color: var(--notes-alert); }
@@ -143,7 +144,7 @@
   </div>
 
   <div id="right">
-    <div id="notesTitle">Notas</div>
+    <div id="notesTitle">NOTAS</div>
     <div id="notesText">Sem notas.</div>
   </div>
 
