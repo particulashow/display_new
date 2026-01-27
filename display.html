@@ -7,13 +7,11 @@
   <style>
     :root {
       --bg-normal: #000000;
-      --bg-alert: #8b0000;
+      --text-normal: #ffffff;
+      --divider: rgba(255,255,255,0.25);
 
       --notes-alert: #ff8800;
       --msg-alert: #8b0000;
-
-      --text-normal: #ffffff;
-      --divider: rgba(255,255,255,0.25);
     }
 
     body {
@@ -68,9 +66,10 @@
       font-size: 4vw;
       max-width: 90%;
       text-align: center;
-      padding: 18px 24px;
-      border-radius: 18px;
-      background: rgba(255,255,255,0.04);
+      /* sem fundo / sem sombra */
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
     }
 
     /* ALERTA mensagem (pisca vermelho só no center) */
@@ -134,7 +133,6 @@
 </head>
 
 <body>
-
   <div id="left">
     <div id="clock">--:--:--</div>
     <div id="countdown">--:--</div>
