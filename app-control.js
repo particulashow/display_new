@@ -13,14 +13,16 @@
   const TOPIC_ALERT = `speaker/alert/${room}`;
   const TOPIC_STATE = `speaker/state/${room}`;
 
+  const FAST = { qos: 0 };                 // rápido
+  const RELIABLE_RETAIN = { qos: 1, retain: true }; // para estado/ack
+
   const client = mqtt.connect(BROKER, {
     clientId: "control_" + Math.random().toString(16).slice(2),
     clean: true,
-    reconnectPeriod: 2000,
+    reconnectPeriod: 1200,
     connectTimeout: 8000
   });
 
-  // ELEMENTOS
   const msgInput = document.getElementById("msgInput");
   const sendBtn = document.getElementById("sendBtn");
   const alertBtn = document.getElementById("alertBtn");
@@ -38,13 +40,11 @@
   const btnStopCountdown = document.getElementById("btnStopCountdown");
   const btnResetCountdown = document.getElementById("btnResetCountdown");
 
-  // PREVIEW
   const pClock = document.getElementById("pClock");
   const pCountdown = document.getElementById("pCountdown");
   const pMainMsg = document.getElementById("pMainMsg");
   const pNotesText = document.getElementById("pNotesText");
 
-  // RODAPÉ
   const statusEl = document.getElementById("status");
   const displayStateEl = document.getElementById("displayState");
 
@@ -55,7 +55,6 @@
     catch { return null; }
   }
 
-  // HISTÓRICO
   function addToHistory(text){
     const t = (text || "").trim();
     if (!t) return;
@@ -75,7 +74,6 @@
     notesHistoryEl.prepend(div);
   }
 
-  // MQTT
   client.on("connect", () => {
     statusEl.textContent = `Ligado (room: ${room})`;
     client.subscribe([TOPIC_ACK, TOPIC_STATE], { qos: 1 });
@@ -86,7 +84,6 @@
   client.on("offline", () => statusEl.textContent = "Servidor offline…");
   client.on("error", () => statusEl.textContent = "Erro de ligação ao servidor.");
 
-  // RECEBER ESTADO DO DISPLAY
   client.on("message", (topic, payload) => {
     const data = safeJSON(payload);
     if (!data) return;
@@ -104,14 +101,12 @@
     }
   });
 
-  // PREVIEW INSTANTÂNEA
   function updatePreviewInstant(mainMsg, notes, countdown){
     if (mainMsg !== undefined) pMainMsg.textContent = mainMsg;
     if (notes !== undefined) pNotesText.textContent = notes;
     if (countdown !== undefined) pCountdown.textContent = countdown;
   }
 
-  // MENSAGEM PRINCIPAL
   sendBtn.addEventListener("click", () => sendMainMessage(msgInput.value));
   msgInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendMainMessage(msgInput.value);
@@ -121,13 +116,14 @@
     text = (text || "").trim();
     if (!text) return;
 
-    client.publish(TOPIC_MSG, JSON.stringify({ text }), { qos: 1, retain: true });
+    // Mensagem rápida (QoS 0) + também retained para “apanhar ao entrar”
+    client.publish(TOPIC_MSG, JSON.stringify({ text }), { qos: 0, retain: true });
+
     addToHistory(text);
     updatePreviewInstant(text);
     msgInput.value = "";
   }
 
-  // NOTAS
   sendNotesBtn.addEventListener("click", () => sendNotes(notesInput.value));
   notesInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter"){
@@ -141,46 +137,45 @@
     if (!text) text = "Sem notas.";
     lastNotesText = text;
 
-    client.publish(TOPIC_NOTES, JSON.stringify({ text }), { qos: 1, retain: true });
+    client.publish(TOPIC_NOTES, JSON.stringify({ text }), { qos: 0, retain: true });
+
     addToNotesHistory(text);
     updatePreviewInstant(undefined, text);
     notesInput.value = "";
   }
 
-  // ALERTA NOTAS
   alertNotesBtn.addEventListener("click", () => {
-    client.publish(TOPIC_NOTES_ALERT, JSON.stringify({ action: "alertNotes" }), { qos: 1 });
-    // reenvia notas para garantir consistência
-    client.publish(TOPIC_NOTES, JSON.stringify({ text: lastNotesText }), { qos: 1, retain: true });
+    // dispara o blink rápido
+    client.publish(TOPIC_NOTES_ALERT, JSON.stringify({ action: "alertNotes" }), FAST);
+    // reenvia o texto retained para consistência
+    client.publish(TOPIC_NOTES, JSON.stringify({ text: lastNotesText }), { qos: 0, retain: true });
   });
 
-  // COUNTDOWN
   btnSetCountdown.addEventListener("click", () => {
     const minutes = parseInt(countdownInput.value, 10);
     if (Number.isNaN(minutes) || minutes < 0) return;
 
     const seconds = minutes * 60;
-    client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "set", seconds }), { qos: 1 });
+    client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "set", seconds }), FAST);
 
     const m = String(minutes).padStart(2, "0");
     updatePreviewInstant(undefined, undefined, `${m}:00`);
   });
 
   btnStartCountdown.addEventListener("click", () => {
-    client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "start" }), { qos: 1 });
+    client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "start" }), FAST);
   });
 
   btnStopCountdown.addEventListener("click", () => {
-    client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "stop" }), { qos: 1 });
+    client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "stop" }), FAST);
   });
 
   btnResetCountdown.addEventListener("click", () => {
-    client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "reset" }), { qos: 1 });
+    client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "reset" }), FAST);
     updatePreviewInstant(undefined, undefined, "--:--");
   });
 
-  // ALERTA GERAL
   alertBtn.addEventListener("click", () => {
-    client.publish(TOPIC_ALERT, JSON.stringify({ action: "alert" }), { qos: 1 });
+    client.publish(TOPIC_ALERT, JSON.stringify({ action: "alert" }), FAST);
   });
 })();
