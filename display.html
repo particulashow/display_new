@@ -1,178 +1,118 @@
-const params = new URLSearchParams(location.search);
-const room = params.get("room") || "default";
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Speaker Display</title>
+  <style>
+    :root{
+      --bg-normal:#000000;
+      --bg-alert:#8b0000;
+      --text-normal:#ffffff;
+      --divider:rgba(255,255,255,0.25);
+    }
 
-const BROKER = "wss://test.mosquitto.org:8081/mqtt";
+    body{
+      margin:0;
+      background:var(--bg-normal);
+      color:var(--text-normal);
+      font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      height:100vh;
+      display:grid;
+      grid-template-columns:0.6fr 2.8fr 0.6fr;
+      grid-template-areas:"left center right";
+    }
 
-const TOPIC_MSG = `speaker/messages/${room}`;
-const TOPIC_ACK = `speaker/ack/${room}`;
-const TOPIC_NOTES = `speaker/notes/${room}`;
-const TOPIC_NOTES_ALERT = `speaker/notesAlert/${room}`;
-const TOPIC_COUNTDOWN = `speaker/countdown/${room}`;
-const TOPIC_ALERT = `speaker/alert/${room}`;
-const TOPIC_STATE = `speaker/state/${room}`;
+    /* LEFT */
+    #left{
+      grid-area:left;
+      padding:20px;
+      border-right:1px solid var(--divider);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      gap:25px;
+    }
 
-const client = mqtt.connect(BROKER, {
-  clientId: "control_" + Math.random().toString(16).slice(2),
-  clean: true,
-  reconnectPeriod: 2000
-});
+    #clock{ font-size:3vw; font-weight:700; }
+    #countdown{
+      font-size:3vw;
+      font-weight:800;
+      color:#ff4d4d;
+      border-top:1px solid var(--divider);
+      padding-top:15px;
+    }
 
-// ELEMENTOS
-const msgInput = document.getElementById("msgInput");
-const sendBtn = document.getElementById("sendBtn");
-const alertBtn = document.getElementById("alertBtn");
-const alertNotesBtn = document.getElementById("alertNotesBtn");
+    /* CENTER */
+    #center{
+      grid-area:center;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      border-left:1px solid var(--divider);
+      border-right:1px solid var(--divider);
+    }
 
-const notesInput = document.getElementById("notesInput");
-const sendNotesBtn = document.getElementById("sendNotesBtn");
+    #mainMsg{
+      font-size:4vw;
+      color:#fff;
+      max-width:90%;
+      text-align:center;
+      line-height:1.05;
+    }
 
-const historyEl = document.getElementById("history");
-const notesHistoryEl = document.getElementById("notesHistory");
+    .blink{ animation: blinkAnim 0.4s steps(2, start) 3s; }
+    @keyframes blinkAnim{ 50%{ opacity:0; } }
 
-const countdownInput = document.getElementById("countdownInput");
-const btnSetCountdown = document.getElementById("btnSetCountdown");
-const btnStartCountdown = document.getElementById("btnStartCountdown");
-const btnStopCountdown = document.getElementById("btnStopCountdown");
-const btnResetCountdown = document.getElementById("btnResetCountdown");
+    /* RIGHT */
+    #right{
+      grid-area:right;
+      padding:20px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      transition:background 0.2s;
+    }
 
-// PREVIEW
-const pClock = document.getElementById("pClock");
-const pCountdown = document.getElementById("pCountdown");
-const pMainMsg = document.getElementById("pMainMsg");
-const pNotesText = document.getElementById("pNotesText");
+    #notesTitle{
+      font-weight:700;
+      font-size:1.4vw;
+      opacity:0.8;
+    }
 
-// RODAPÉ
-const statusEl = document.getElementById("status");
-const displayStateEl = document.getElementById("displayState");
+    #notesText{
+      font-size:1.6vw;
+      max-width:90%;
+      line-height:1.15;
+      opacity:0.95;
+    }
 
-// ESTADO LOCAL
-let lastNotesText = "Sem notas.";
+    .notes-bg-blink{ animation: notesBgBlink 0.4s steps(2, start) 2s; }
+    @keyframes notesBgBlink{
+      0%{ background-color:#000; }
+      50%{ background-color:#8b0000; }
+      100%{ background-color:#000; }
+    }
+  </style>
+</head>
+<body>
 
-// HISTÓRICO
-function addToHistory(text) {
-  const div = document.createElement("div");
-  div.className = "history-item";
-  div.textContent = text;
-  div.onclick = () => sendMainMessage(text);
-  historyEl.prepend(div);
-}
+  <div id="left">
+    <div id="clock">--:--:--</div>
+    <div id="countdown">--:--</div>
+  </div>
 
-function addToNotesHistory(text) {
-  const div = document.createElement("div");
-  div.className = "history-item";
-  div.textContent = text;
-  div.onclick = () => sendNotes(text);
-  notesHistoryEl.prepend(div);
-}
+  <div id="center">
+    <div id="mainMsg">A aguardar mensagem…</div>
+  </div>
 
-// MQTT
-client.on("connect", () => {
-  statusEl.textContent = `Ligado (room: ${room})`;
-  client.subscribe(TOPIC_ACK);
-  client.subscribe(TOPIC_STATE);
-});
+  <div id="right">
+    <div id="notesTitle">Notas</div>
+    <div id="notesText">Sem notas.</div>
+  </div>
 
-client.on("reconnect", () => statusEl.textContent = "A reconectar…");
-client.on("close", () => statusEl.textContent = "Ligação perdida…");
-client.on("offline", () => statusEl.textContent = "Servidor offline…");
-client.on("error", () => statusEl.textContent = "Erro de ligação ao servidor.");
-
-// RECEBER ESTADO DO DISPLAY
-client.on("message", (topic, payload) => {
-  const data = JSON.parse(payload.toString());
-
-  if (topic === TOPIC_ACK) {
-    if (data.status === "online") displayStateEl.textContent = "Display online.";
-    if (data.status === "received") displayStateEl.textContent = `Entregue: "${data.text}"`;
-  }
-
-  if (topic === TOPIC_STATE) {
-    pClock.textContent = data.clock;
-    pCountdown.textContent = data.countdown;
-    pMainMsg.textContent = data.mainMsg;
-    pNotesText.textContent = data.notes;
-  }
-});
-
-// PREVIEW INSTANTÂNEA
-function updatePreviewInstant(mainMsg, notes, countdown) {
-  if (mainMsg !== undefined) pMainMsg.textContent = mainMsg;
-  if (notes !== undefined) pNotesText.textContent = notes;
-  if (countdown !== undefined) pCountdown.textContent = countdown;
-}
-
-// MENSAGEM PRINCIPAL
-sendBtn.addEventListener("click", () => sendMainMessage(msgInput.value));
-msgInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") sendMainMessage(msgInput.value);
-});
-
-function sendMainMessage(text) {
-  text = text.trim();
-  if (!text) return;
-
-  client.publish(TOPIC_MSG, JSON.stringify({ text }), { qos: 1 });
-
-  addToHistory(text);
-  updatePreviewInstant(text);
-
-  msgInput.value = "";
-}
-
-// NOTAS
-sendNotesBtn.addEventListener("click", () => sendNotes(notesInput.value.trim()));
-
-notesInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    sendNotes(notesInput.value.trim());
-  }
-});
-
-function sendNotes(text) {
-  if (!text) text = "Sem notas.";
-  lastNotesText = text;
-
-  client.publish(TOPIC_NOTES, JSON.stringify({ text }), { qos: 1 });
-
-  addToNotesHistory(text);
-  updatePreviewInstant(undefined, text);
-
-  notesInput.value = "";
-}
-
-// ALERTA NOTAS
-alertNotesBtn.addEventListener("click", () => {
-  client.publish(TOPIC_NOTES_ALERT, JSON.stringify({ action: "alertNotes" }), { qos: 1 });
-  client.publish(TOPIC_NOTES, JSON.stringify({ text: lastNotesText }), { qos: 1 });
-});
-
-// COUNTDOWN
-btnSetCountdown.addEventListener("click", () => {
-  const minutes = parseInt(countdownInput.value, 10);
-  if (isNaN(minutes) || minutes < 0) return;
-
-  const seconds = minutes * 60;
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "set", seconds }), { qos: 1 });
-
-  const m = String(minutes).padStart(2, "0");
-  updatePreviewInstant(undefined, undefined, `${m}:00`);
-});
-
-btnStartCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "start" }), { qos: 1 });
-});
-
-btnStopCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "stop" }), { qos: 1 });
-});
-
-btnResetCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ action: "reset" }), { qos: 1 });
-  updatePreviewInstant(undefined, undefined, "--:--");
-});
-
-// ALERTA GERAL
-alertBtn.addEventListener("click", () => {
-  client.publish(TOPIC_ALERT, JSON.stringify({ action: "alert" }), { qos: 1 });
-});
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="./app-display.js"></script>
+</body>
+</html>
