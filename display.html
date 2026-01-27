@@ -10,6 +10,7 @@
       --bg-alert:#8b0000;
       --text-normal:#ffffff;
       --divider:rgba(255,255,255,0.25);
+      --notes-alert:#ff8800; /* LARANJA */
     }
 
     body{
@@ -23,7 +24,6 @@
       grid-template-areas:"left center right";
     }
 
-    /* LEFT */
     #left{
       grid-area:left;
       padding:20px;
@@ -44,7 +44,6 @@
       padding-top:15px;
     }
 
-    /* CENTER */
     #center{
       grid-area:center;
       display:flex;
@@ -65,7 +64,6 @@
     .blink{ animation: blinkAnim 0.4s steps(2, start) 3s; }
     @keyframes blinkAnim{ 50%{ opacity:0; } }
 
-    /* RIGHT */
     #right{
       grid-area:right;
       padding:20px;
@@ -88,11 +86,12 @@
       opacity:0.95;
     }
 
-    .notes-bg-blink{ animation: notesBgBlink 0.4s steps(2, start) 2s; }
+    /* Pisca laranja durante 3s */
+    .notes-bg-blink{ animation: notesBgBlink 0.4s steps(2, start) 3s; }
     @keyframes notesBgBlink{
-      0%{ background-color:#000; }
-      50%{ background-color:#8b0000; }
-      100%{ background-color:#000; }
+      0%{ background-color: transparent; }
+      50%{ background-color: var(--notes-alert); }
+      100%{ background-color: transparent; }
     }
   </style>
 </head>
