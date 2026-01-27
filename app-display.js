@@ -10,30 +10,48 @@ const TOPIC_NOTES_ALERT = `speaker/notesAlert/${room}`;
 const TOPIC_COUNTDOWN = `speaker/countdown/${room}`;
 const TOPIC_ALERT = `speaker/alert/${room}`;
 const TOPIC_STATE = `speaker/state/${room}`;
+const TOPIC_RESET = `speaker/reset/${room}`;
 
 const client = mqtt.connect(BROKER, {
   clientId: "display_" + Math.random().toString(16).slice(2),
   clean: true,
-  reconnectPeriod: 1000
+  reconnectPeriod: 800,
+  keepalive: 30
 });
 
-/* ELEMENTOS */
+// ELEMENTOS
 const mainMsgEl = document.getElementById("mainMsg");
 const notesTextEl = document.getElementById("notesText");
 const notesBoxEl = document.getElementById("right");
+const centerEl = document.getElementById("center");
 const clockEl = document.getElementById("clock");
 const countdownEl = document.getElementById("countdown");
 
 let countdownSeconds = null;
 let countdownInterval = null;
 
-/* RELÓGIO */
+// Anti-duplicados (evita “alarmes fantasma” em reconnect/QoS1)
+const lastSeen = new Map(); // key -> {ts, sig}
+const DEDUPE_WINDOW_MS = 15000;
+
+function nowMs(){ return Date.now(); }
+
+function shouldIgnoreDuplicate(topic, sig){
+  const k = topic;
+  const prev = lastSeen.get(k);
+  const t = nowMs();
+  if (prev && prev.sig === sig && (t - prev.ts) < DEDUPE_WINDOW_MS) return true;
+  lastSeen.set(k, { ts: t, sig });
+  return false;
+}
+
+// RELÓGIO
 setInterval(() => {
   clockEl.textContent = new Date().toLocaleTimeString("pt-PT");
   publishState();
 }, 1000);
 
-/* COUNTDOWN */
+// COUNTDOWN
 function renderCountdown() {
   if (countdownSeconds === null) {
     countdownEl.textContent = "--:--";
@@ -58,34 +76,39 @@ function stopCountdown() {
   countdownInterval = null;
 }
 
-/* ALERTAS */
-function triggerMainAlert() {
-  document.body.style.background = "var(--bg-alert)";
-  mainMsgEl.classList.add("blink");
-  setTimeout(() => {
-    document.body.style.background = "var(--bg-normal)";
-    mainMsgEl.classList.remove("blink");
-  }, 3000);
-}
-
+// ALERTAS
 function triggerNotesAlert() {
   notesBoxEl.classList.remove("notes-bg-blink");
-  void notesBoxEl.offsetWidth; // força reflow
+  void notesBoxEl.offsetWidth; // reflow
   notesBoxEl.classList.add("notes-bg-blink");
-
-  setTimeout(() => {
-    notesBoxEl.classList.remove("notes-bg-blink");
-  }, 3100);
+  setTimeout(() => notesBoxEl.classList.remove("notes-bg-blink"), 3100);
 }
 
-function triggerGlobalAlert() {
-  document.body.style.background = "var(--bg-alert)";
-  setTimeout(() => {
-    document.body.style.background = "var(--bg-normal)";
-  }, 3000);
+function triggerMsgAlert() {
+  // pisca só na coluna do meio
+  centerEl.classList.remove("msg-bg-blink");
+  void centerEl.offsetWidth;
+  centerEl.classList.add("msg-bg-blink");
+  setTimeout(() => centerEl.classList.remove("msg-bg-blink"), 3100);
 }
 
-/* ESTADO */
+// RESET TOTAL
+function resetAll() {
+  mainMsgEl.textContent = "Aguardando mensagem…";
+  notesTextEl.textContent = "Sem notas.";
+
+  countdownSeconds = null;
+  stopCountdown();
+  renderCountdown();
+
+  // limpar classes
+  notesBoxEl.classList.remove("notes-bg-blink");
+  centerEl.classList.remove("msg-bg-blink");
+
+  publishState();
+}
+
+// ESTADO
 function publishState() {
   const state = {
     clock: clockEl.textContent,
@@ -96,29 +119,41 @@ function publishState() {
   client.publish(TOPIC_STATE, JSON.stringify(state));
 }
 
-/* MQTT */
+// MQTT
 client.on("connect", () => {
-  client.subscribe(TOPIC_MSG);
-  client.subscribe(TOPIC_NOTES);
-  client.subscribe(TOPIC_NOTES_ALERT);
-  client.subscribe(TOPIC_COUNTDOWN);
-  client.subscribe(TOPIC_ALERT);
+  client.subscribe(TOPIC_MSG, { qos: 0 });
+  client.subscribe(TOPIC_NOTES, { qos: 0 });
+  client.subscribe(TOPIC_NOTES_ALERT, { qos: 0 });
+  client.subscribe(TOPIC_COUNTDOWN, { qos: 0 });
+  client.subscribe(TOPIC_ALERT, { qos: 0 });
+  client.subscribe(TOPIC_RESET, { qos: 0 });
 
-  client.publish(TOPIC_ACK, JSON.stringify({ status: "online" }));
+  client.publish(TOPIC_ACK, JSON.stringify({ status: "online" }), { qos: 0 });
   publishState();
 });
 
 client.on("message", (topic, payload) => {
-  const data = JSON.parse(payload.toString());
+  let data;
+  try {
+    data = JSON.parse(payload.toString());
+  } catch {
+    return;
+  }
+
+  // assinatura simples para dedupe
+  const sig = JSON.stringify(data);
+  if (shouldIgnoreDuplicate(topic, sig)) return;
 
   if (topic === TOPIC_MSG) {
-    mainMsgEl.textContent = data.text;
-    triggerMainAlert();
-    publishState();
+    if (typeof data.text === "string") {
+      mainMsgEl.textContent = data.text;
+      triggerMsgAlert(); // agora o “alerta geral” é só na área da mensagem
+      publishState();
+    }
   }
 
   if (topic === TOPIC_NOTES) {
-    notesTextEl.textContent = data.text || "Sem notas.";
+    notesTextEl.textContent = (data.text || "Sem notas.");
     triggerNotesAlert();
     publishState();
   }
@@ -127,10 +162,16 @@ client.on("message", (topic, payload) => {
     triggerNotesAlert();
   }
 
+  if (topic === TOPIC_ALERT) {
+    // alerta geral: piscar vermelho na área da mensagem
+    triggerMsgAlert();
+  }
+
   if (topic === TOPIC_COUNTDOWN) {
     if (data.action === "set") {
-      countdownSeconds = data.seconds;
+      countdownSeconds = Number(data.seconds) || 0;
       renderCountdown();
+      publishState();
     }
     if (data.action === "start") startCountdown();
     if (data.action === "stop") stopCountdown();
@@ -138,12 +179,11 @@ client.on("message", (topic, payload) => {
       countdownSeconds = null;
       stopCountdown();
       renderCountdown();
+      publishState();
     }
-    publishState();
   }
 
-  if (topic === TOPIC_ALERT) {
-    triggerGlobalAlert();
-    publishState();
+  if (topic === TOPIC_RESET) {
+    resetAll();
   }
 });
