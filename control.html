@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt">
 <head>
   <meta charset="utf-8">
   <title>Speaker Control</title>
@@ -21,7 +21,6 @@
 
     input, button { font-family: inherit; }
 
-    /* GRID PRINCIPAL */
     #topGrid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -29,7 +28,6 @@
       margin-bottom: 30px;
     }
 
-    /* INPUTS */
     #msgInput, #notesInput, #countdownInput {
       width: 100%;
       font-size: 18px;
@@ -43,7 +41,6 @@
 
     #countdownInput { width: 120px; }
 
-    /* BOTÕES */
     button {
       padding: 12px 22px;
       font-size: 17px;
@@ -51,10 +48,11 @@
       border: none;
       border-radius: 6px;
       color: #fff;
-      font-weight: 600;
+      font-weight: 700;
       transition: 0.15s ease;
       margin-right: 8px;
       margin-top: 5px;
+      letter-spacing: .2px;
     }
 
     #sendBtn, #sendNotesBtn { background: #007aff; }
@@ -66,8 +64,11 @@
     #alertNotesBtn { background: #ff8800; }
     #alertNotesBtn:hover { background: #ffaa33; }
 
-    #resetAllBtn { background: #444; border: 1px solid #666; }
-    #resetAllBtn:hover { background: #666; }
+    #resetAllBtn{
+      background:#2b2b2b;
+      border:1px solid #555;
+    }
+    #resetAllBtn:hover{ background:#3a3a3a; }
 
     #btnSetCountdown, #btnStartCountdown, #btnStopCountdown, #btnResetCountdown {
       background: #444;
@@ -77,7 +78,6 @@
       background: #666;
     }
 
-    /* HISTÓRICOS */
     #history, #notesHistory {
       margin-top: 10px;
       max-height: 200px;
@@ -96,7 +96,6 @@
     }
     .history-item:hover { color: #0a84ff; }
 
-    /* PREVIEW */
     #previewContainer {
       margin-top: 30px;
       border: 1px solid #333;
@@ -137,7 +136,12 @@
 
     #pRight { display: flex; flex-direction: column; gap: 6px; }
 
-    /* RODAPÉ */
+    .underlineTitle{
+      text-decoration: underline;
+      text-underline-offset: 5px;
+      text-decoration-thickness: 2px;
+    }
+
     #footerStatus {
       margin-top: 25px;
       padding-top: 15px;
@@ -159,8 +163,8 @@
       <h3>Mensagem principal</h3>
       <input id="msgInput" type="text" placeholder="Escreve a mensagem…">
       <button id="sendBtn">Enviar</button>
-      <button id="alertBtn">🔴 ALERTA GERAL</button>
-      <button id="resetAllBtn">🧹 Reset / Limpar tudo</button>
+      <button id="alertBtn">ALERTA MENSAGEM</button>
+      <button id="resetAllBtn">🧼 RESET TUDO</button>
 
       <h3>Histórico de mensagens</h3>
       <div id="history"></div>
@@ -168,7 +172,7 @@
 
     <!-- NOTAS -->
     <div>
-      <h3>Notas</h3>
+      <h3 class="underlineTitle">NOTAS</h3>
       <input id="notesInput" type="text" placeholder="Ex: 120 pessoas a assistir…">
       <button id="sendNotesBtn">Atualizar notas</button>
       <button id="alertNotesBtn">🔶 ALERTA NOTAS</button>
@@ -201,7 +205,7 @@
       </div>
 
       <div id="pRight">
-        <div style="font-weight:600;opacity:0.8;">Notas</div>
+        <div class="underlineTitle" style="font-weight:700;opacity:0.85;">NOTAS</div>
         <div id="pNotesText">Sem notas.</div>
       </div>
     </div>
