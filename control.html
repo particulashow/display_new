@@ -1,183 +1,193 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8">
   <title>Speaker Control</title>
 
   <style>
-    body{
-      font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      padding:20px;
-      max-width:1200px;
-      margin:0 auto;
-      background:#0d0d0d;
-      color:#eee;
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #0d0d0d;
+      color: #eeeeee;
     }
 
-    h2,h3{ margin-top:0; color:#fff; }
-    input,button{ font-family:inherit; }
-
-    #topGrid{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:25px;
-      margin-bottom:30px;
-    }
-    @media (max-width: 900px){
-      #topGrid{ grid-template-columns:1fr; }
+    h2, h3 {
+      margin-top: 0;
+      color: #ffffff;
     }
 
-    #msgInput,#notesInput,#countdownInput{
-      width:100%;
-      font-size:18px;
-      padding:12px;
-      background:#1a1a1a;
-      border:1px solid #333;
-      color:#eee;
-      border-radius:8px;
-      margin-bottom:10px;
-      outline:none;
-    }
-    #countdownInput{ width:140px; }
+    input, button { font-family: inherit; }
 
-    button{
-      padding:12px 18px;
-      font-size:16px;
-      cursor:pointer;
-      border:none;
-      border-radius:10px;
-      color:#fff;
-      font-weight:750;
-      transition:0.15s ease;
-      margin-right:8px;
-      margin-top:5px;
-      background:#333;
-    }
-    button:hover{ filter:brightness(1.1); }
-
-    #sendBtn,#sendNotesBtn{ background:#007aff; }
-    #alertBtn{ background:#ff0033; }
-    #alertNotesBtn{ background:#ff8800; }
-
-    #btnSetCountdown,#btnStartCountdown,#btnStopCountdown,#btnResetCountdown{
-      background:#444;
-      border:1px solid #666;
+    /* GRID PRINCIPAL */
+    #topGrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 25px;
+      margin-bottom: 30px;
     }
 
-    #history,#notesHistory{
-      margin-top:10px;
-      max-height:220px;
-      overflow-y:auto;
-      border:1px solid #333;
-      padding:10px;
-      border-radius:10px;
-      background:#181818;
+    /* INPUTS */
+    #msgInput, #notesInput, #countdownInput {
+      width: 100%;
+      font-size: 18px;
+      padding: 12px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #eee;
+      border-radius: 6px;
+      margin-bottom: 10px;
     }
 
-    .history-item{
-      padding:6px 0;
-      cursor:pointer;
-      border-bottom:1px solid #222;
-      font-size:14px;
-      opacity:0.95;
-    }
-    .history-item:hover{ color:#0a84ff; }
+    #countdownInput { width: 120px; }
 
-    #previewContainer{
-      margin-top:30px;
-      border:1px solid #333;
-      padding:15px;
-      border-radius:12px;
-      background:#111;
-    }
-
-    #preview{
-      display:grid;
-      grid-template-columns:0.6fr 2.8fr 0.6fr;
-      height:200px;
-      border:1px solid #333;
-      background:#000;
-      color:#fff;
-      border-radius:12px;
-      overflow:hidden;
+    /* BOTÕES */
+    button {
+      padding: 12px 22px;
+      font-size: 17px;
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-weight: 600;
+      transition: 0.15s ease;
+      margin-right: 8px;
+      margin-top: 5px;
     }
 
-    #pLeft,#pCenter,#pRight{ padding:10px; overflow:hidden; }
-    #pLeft{
-      display:flex; flex-direction:column; justify-content:center; align-items:center;
-      border-right:1px solid #222;
-    }
-    #pCenter{
-      display:flex; justify-content:center; align-items:center;
-      border-left:1px solid #222; border-right:1px solid #222;
-      text-align:center;
-    }
-    #pMainMsg{ font-size:22px; max-width:90%; line-height:1.1; }
+    #sendBtn, #sendNotesBtn { background: #007aff; }
+    #sendBtn:hover, #sendNotesBtn:hover { background: #3399ff; }
 
-    #pRight{ display:flex; flex-direction:column; gap:6px; }
+    #alertBtn { background: #ff0033; }
+    #alertBtn:hover { background: #ff335c; }
 
-    #footerStatus{
-      margin-top:25px;
-      padding-top:15px;
-      border-top:1px solid #333;
-      font-size:14px;
-      opacity:0.85;
-      display:flex;
-      flex-direction:column;
-      gap:6px;
+    #alertNotesBtn { background: #ff8800; }
+    #alertNotesBtn:hover { background: #ffaa33; }
+
+    #resetAllBtn { background: #444; border: 1px solid #666; }
+    #resetAllBtn:hover { background: #666; }
+
+    #btnSetCountdown, #btnStartCountdown, #btnStopCountdown, #btnResetCountdown {
+      background: #444;
+      border: 1px solid #666;
     }
-    .pill{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding:6px 10px;
-      border-radius:999px;
-      border:1px solid #2a2a2a;
-      background:#121212;
-      width:fit-content;
+    #btnSetCountdown:hover, #btnStartCountdown:hover, #btnStopCountdown:hover, #btnResetCountdown:hover {
+      background: #666;
+    }
+
+    /* HISTÓRICOS */
+    #history, #notesHistory {
+      margin-top: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #333;
+      padding: 10px;
+      border-radius: 6px;
+      background: #181818;
+    }
+
+    .history-item {
+      padding: 6px 0;
+      cursor: pointer;
+      border-bottom: 1px solid #222;
+      font-size: 14px;
+    }
+    .history-item:hover { color: #0a84ff; }
+
+    /* PREVIEW */
+    #previewContainer {
+      margin-top: 30px;
+      border: 1px solid #333;
+      padding: 15px;
+      border-radius: 6px;
+      background: #111;
+    }
+
+    #preview {
+      display: grid;
+      grid-template-columns: 0.6fr 2.8fr 0.6fr;
+      height: 200px;
+      border: 1px solid #333;
+      background: #000;
+      color: #fff;
+    }
+
+    #pLeft, #pCenter, #pRight { padding: 10px; overflow: hidden; }
+
+    #pLeft {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      border-right: 1px solid #333;
+    }
+
+    #pCenter {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-left: 1px solid #333;
+      border-right: 1px solid #333;
+      text-align: center;
+    }
+
+    #pMainMsg { font-size: 22px; max-width: 90%; }
+
+    #pRight { display: flex; flex-direction: column; gap: 6px; }
+
+    /* RODAPÉ */
+    #footerStatus {
+      margin-top: 25px;
+      padding-top: 15px;
+      border-top: 1px solid #333;
+      font-size: 14px;
+      opacity: 0.8;
     }
   </style>
 </head>
 
 <body>
+
   <h2>Speaker Control</h2>
 
-  <div class="pill">
-    <strong>Room:</strong> <span id="roomLabel">default</span>
-  </div>
+  <div id="topGrid">
 
-  <div id="topGrid" style="margin-top:14px">
-
+    <!-- MENSAGEM PRINCIPAL -->
     <div>
       <h3>Mensagem principal</h3>
-      <input id="msgInput" type="text" placeholder="Escreve a mensagem…" />
+      <input id="msgInput" type="text" placeholder="Escreve a mensagem…">
       <button id="sendBtn">Enviar</button>
       <button id="alertBtn">🔴 ALERTA GERAL</button>
+      <button id="resetAllBtn">🧹 Reset / Limpar tudo</button>
 
-      <h3 style="margin-top:18px">Histórico de mensagens</h3>
+      <h3>Histórico de mensagens</h3>
       <div id="history"></div>
     </div>
 
+    <!-- NOTAS -->
     <div>
       <h3>Notas</h3>
-      <input id="notesInput" type="text" placeholder="Ex: 120 pessoas a assistir…" />
+      <input id="notesInput" type="text" placeholder="Ex: 120 pessoas a assistir…">
       <button id="sendNotesBtn">Atualizar notas</button>
       <button id="alertNotesBtn">🔶 ALERTA NOTAS</button>
 
-      <h3 style="margin-top:18px">Histórico de notas</h3>
+      <h3>Histórico de notas</h3>
       <div id="notesHistory"></div>
     </div>
 
   </div>
 
+  <!-- COUNTDOWN -->
   <h3>Countdown</h3>
-  <input id="countdownInput" type="number" min="0" placeholder="min" />
+  <input id="countdownInput" type="number" min="0" placeholder="min">
   <button id="btnSetCountdown">Definir</button>
   <button id="btnStartCountdown">Iniciar</button>
   <button id="btnStopCountdown">Parar</button>
   <button id="btnResetCountdown">Reset</button>
 
+  <!-- PREVIEW -->
   <div id="previewContainer">
     <h3>Pré-visualização</h3>
     <div id="preview">
@@ -185,22 +195,26 @@
         <div id="pClock">--:--:--</div>
         <div id="pCountdown">--:--</div>
       </div>
+
       <div id="pCenter">
-        <div id="pMainMsg">A aguardar…</div>
+        <div id="pMainMsg">Aguardando…</div>
       </div>
+
       <div id="pRight">
-        <div style="font-weight:700;opacity:0.85;">Notas</div>
+        <div style="font-weight:600;opacity:0.8;">Notas</div>
         <div id="pNotesText">Sem notas.</div>
       </div>
     </div>
   </div>
 
+  <!-- RODAPÉ -->
   <div id="footerStatus">
     <div id="status">A ligar ao servidor…</div>
     <div id="displayState"></div>
   </div>
 
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <script src="./app-control.js"></script>
+  <script src="app-control.js"></script>
+
 </body>
 </html>
