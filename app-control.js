@@ -16,9 +16,11 @@ const client = mqtt.connect(BROKER, {
   clientId: "control_" + Math.random().toString(16).slice(2),
   clean: true,
   reconnectPeriod: 500,
-  keepalive: 30
+  keepalive: 30,
+  resubscribe: true
 });
 
+// ELEMENTOS
 const msgInput = document.getElementById("msgInput");
 const sendBtn = document.getElementById("sendBtn");
 const alertBtn = document.getElementById("alertBtn");
@@ -49,15 +51,27 @@ const statusEl = document.getElementById("status");
 const displayStateEl = document.getElementById("displayState");
 const lastSyncEl = document.getElementById("lastSync");
 
-function uid(){
-  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-}
-
+// helpers
+function uid(){ return `${Date.now()}_${Math.random().toString(16).slice(2)}`; }
 function stampSync(){
-  const t = new Date().toLocaleTimeString("pt-PT");
-  lastSyncEl.textContent = `Última sync: ${t}`;
+  lastSyncEl.textContent = `Última sync: ${new Date().toLocaleTimeString("pt-PT")}`;
 }
 
+// Preview: alarmes
+function previewMsgAlert(){
+  pCenter.classList.remove("p-msg-blink");
+  void pCenter.offsetWidth;
+  pCenter.classList.add("p-msg-blink");
+  setTimeout(() => pCenter.classList.remove("p-msg-blink"), 3100);
+}
+function previewNotesAlert(){
+  pRight.classList.remove("p-notes-blink");
+  void pRight.offsetWidth;
+  pRight.classList.add("p-notes-blink");
+  setTimeout(() => pRight.classList.remove("p-notes-blink"), 3100);
+}
+
+// Históricos
 function addToHistory(text) {
   const div = document.createElement("div");
   div.className = "history-item";
@@ -65,7 +79,6 @@ function addToHistory(text) {
   div.onclick = () => sendMainMessage(text);
   historyEl.prepend(div);
 }
-
 function addToNotesHistory(text) {
   const div = document.createElement("div");
   div.className = "history-item";
@@ -74,38 +87,54 @@ function addToNotesHistory(text) {
   notesHistoryEl.prepend(div);
 }
 
-function updatePreviewInstant(mainMsg, notes, countdown) {
-  if (mainMsg !== undefined) pMainMsg.textContent = mainMsg;
-  if (notes !== undefined) pNotesText.textContent = notes;
-  if (countdown !== undefined) pCountdown.textContent = countdown;
+// ----------
+// Countdown preview (local, por endAt)
+// ----------
+let previewEndAt = null;
+let previewRunning = false;
+
+function renderPreviewCountdown(){
+  if (!previewEndAt){
+    pCountdown.textContent = "--:--";
+    return;
+  }
+  const ms = previewEndAt - Date.now();
+  const secs = Math.max(0, Math.ceil(ms/1000));
+  const m = Math.floor(secs/60);
+  const s = secs%60;
+  pCountdown.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  if (secs <= 0) previewRunning = false;
 }
 
-function previewMsgAlert(){
-  pCenter.classList.remove("p-msg-blink");
-  void pCenter.offsetWidth;
-  pCenter.classList.add("p-msg-blink");
-  setTimeout(() => pCenter.classList.remove("p-msg-blink"), 3100);
+// tick local sempre, para ser “tempo real” mesmo que o MQTT atrase
+setInterval(() => {
+  // relógio da preview é só estético; o “real” vem do state quando chegar
+  if (previewRunning) renderPreviewCountdown();
+}, 250);
+
+// ----------
+// Anti-backlog: ignorar states muito antigos
+// ----------
+let lastStateTs = 0;
+function shouldAcceptState(ts){
+  if (!Number.isFinite(ts)) return true;
+  // se vier atrasado mais que 3 segundos face ao último aceite, ignora
+  if (ts < lastStateTs - 3000) return false;
+  if (ts >= lastStateTs) lastStateTs = ts;
+  return true;
 }
 
-function previewNotesAlert(){
-  pRight.classList.remove("p-notes-blink");
-  void pRight.offsetWidth;
-  pRight.classList.add("p-notes-blink");
-  setTimeout(() => pRight.classList.remove("p-notes-blink"), 3100);
-}
-
+// MQTT
 client.on("connect", () => {
   statusEl.textContent = `Ligado (room: ${room})`;
 
-  // ✅ subscrições para sync + alarmes
   client.subscribe(TOPIC_ACK, { qos: 1 });
-  client.subscribe(TOPIC_STATE, { qos: 1 });
-
-  client.subscribe(TOPIC_MSG, { qos: 1 });
-  client.subscribe(TOPIC_NOTES, { qos: 1 });
+  client.subscribe(TOPIC_STATE, { qos: 0 }); // rápido
   client.subscribe(TOPIC_ALERT, { qos: 1 });
   client.subscribe(TOPIC_NOTES_ALERT, { qos: 1 });
   client.subscribe(TOPIC_COUNTDOWN, { qos: 1 });
+  client.subscribe(TOPIC_MSG, { qos: 1 });
+  client.subscribe(TOPIC_NOTES, { qos: 1 });
 
   stampSync();
 });
@@ -115,6 +144,7 @@ client.on("close", () => statusEl.textContent = "Ligação perdida…");
 client.on("offline", () => statusEl.textContent = "Servidor offline…");
 client.on("error", () => statusEl.textContent = "Erro de ligação ao servidor.");
 
+// Receber
 client.on("message", (topic, payload) => {
   let data;
   try { data = JSON.parse(payload.toString()); } catch { return; }
@@ -125,60 +155,88 @@ client.on("message", (topic, payload) => {
     return;
   }
 
-  // ✅ estado completo (clock, countdown, msg, notes)
   if (topic === TOPIC_STATE) {
-    pClock.textContent = data.clock || "--:--:--";
-    pCountdown.textContent = data.countdown || "--:--";
-    pMainMsg.textContent = data.mainMsg || "Aguardando…";
-    pNotesText.textContent = data.notes || "Sem notas.";
+    if (!shouldAcceptState(data.ts)) return;
+
+    // sync hard
+    if (data.clock) pClock.textContent = data.clock;
+    if (typeof data.mainMsg === "string") pMainMsg.textContent = data.mainMsg;
+    if (typeof data.notes === "string") pNotesText.textContent = data.notes;
+
+    // countdown por endAt
+    if (Number.isFinite(Number(data.countdownEndAt))) {
+      previewEndAt = Number(data.countdownEndAt);
+      previewRunning = !!data.countdownRunning;
+      renderPreviewCountdown();
+    } else if (typeof data.countdown === "string") {
+      // fallback
+      pCountdown.textContent = data.countdown;
+    }
+
     stampSync();
     return;
   }
 
-  // ✅ eventos (para preview ficar viva mesmo se o state atrasar)
+  // eventos para preview (sem depender do state)
   if (topic === TOPIC_MSG) {
-    if (typeof data.text === "string") updatePreviewInstant(data.text, undefined, undefined);
+    if (typeof data.text === "string") pMainMsg.textContent = data.text;
     previewMsgAlert();
     stampSync();
     return;
   }
 
   if (topic === TOPIC_NOTES) {
-    if (typeof data.text === "string") updatePreviewInstant(undefined, data.text || "Sem notas.", undefined);
+    if (typeof data.text === "string") pNotesText.textContent = data.text || "Sem notas.";
     previewNotesAlert();
     stampSync();
     return;
   }
 
   if (topic === TOPIC_ALERT) {
-    if (data.action === "alert") previewMsgAlert();
+    previewMsgAlert();
     stampSync();
     return;
   }
 
   if (topic === TOPIC_NOTES_ALERT) {
-    if (data.action === "alertNotes") previewNotesAlert();
+    previewNotesAlert();
     stampSync();
     return;
   }
 
   if (topic === TOPIC_COUNTDOWN) {
-    if (data.action === "set" && Number.isFinite(Number(data.seconds))) {
-      const total = Number(data.seconds);
-      const m = Math.floor(total / 60);
-      const s = total % 60;
-      updatePreviewInstant(undefined, undefined, `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`);
+    if (data.action === "set") {
+      if (Number.isFinite(Number(data.endAt))) {
+        previewEndAt = Number(data.endAt);
+      } else if (Number.isFinite(Number(data.seconds))) {
+        previewEndAt = Date.now() + Number(data.seconds) * 1000;
+      }
+      previewRunning = false;
+      renderPreviewCountdown();
+      stampSync();
+      return;
+    }
+    if (data.action === "start") {
+      previewRunning = true;
+      stampSync();
+      return;
+    }
+    if (data.action === "stop") {
+      previewRunning = false;
       stampSync();
       return;
     }
     if (data.action === "reset") {
-      updatePreviewInstant(undefined, undefined, "--:--");
+      previewEndAt = null;
+      previewRunning = false;
+      pCountdown.textContent = "--:--";
       stampSync();
       return;
     }
   }
 });
 
+// Enviar
 sendBtn.addEventListener("click", () => sendMainMessage(msgInput.value));
 msgInput.addEventListener("keydown", e => {
   if (e.key === "Enter") sendMainMessage(msgInput.value);
@@ -187,10 +245,13 @@ msgInput.addEventListener("keydown", e => {
 function sendMainMessage(text) {
   text = (text || "").trim();
   if (!text) return;
-  client.publish(TOPIC_MSG, JSON.stringify({ id: uid(), text }), { qos: 1, retain: false });
+
+  client.publish(TOPIC_MSG, JSON.stringify({ id: uid(), ts: Date.now(), text }), { qos: 1, retain: false });
   addToHistory(text);
-  updatePreviewInstant(text);
-  previewMsgAlert(); // ✅ mostra logo na preview
+
+  // preview instant
+  pMainMsg.textContent = text;
+  previewMsgAlert();
   msgInput.value = "";
 }
 
@@ -202,45 +263,66 @@ notesInput.addEventListener("keydown", e => {
 function sendNotes(text) {
   text = (text || "").trim();
   if (!text) text = "Sem notas.";
-  client.publish(TOPIC_NOTES, JSON.stringify({ id: uid(), text }), { qos: 1, retain: false });
+
+  client.publish(TOPIC_NOTES, JSON.stringify({ id: uid(), ts: Date.now(), text }), { qos: 1, retain: false });
   addToNotesHistory(text);
-  updatePreviewInstant(undefined, text);
-  previewNotesAlert(); // ✅ mostra logo na preview
+
+  // preview instant
+  pNotesText.textContent = text;
+  previewNotesAlert();
   notesInput.value = "";
 }
 
 alertNotesBtn.addEventListener("click", () => {
-  client.publish(TOPIC_NOTES_ALERT, JSON.stringify({ id: uid(), action: "alertNotes" }), { qos: 1, retain: false });
-  previewNotesAlert(); // ✅ preview instant
+  client.publish(TOPIC_NOTES_ALERT, JSON.stringify({ id: uid(), ts: Date.now(), action: "alertNotes" }), { qos: 1, retain: false });
+  previewNotesAlert();
 });
 
 alertBtn.addEventListener("click", () => {
-  client.publish(TOPIC_ALERT, JSON.stringify({ id: uid(), action: "alert" }), { qos: 1, retain: false });
-  previewMsgAlert(); // ✅ preview instant
+  client.publish(TOPIC_ALERT, JSON.stringify({ id: uid(), ts: Date.now(), action: "alert" }), { qos: 1, retain: false });
+  previewMsgAlert();
 });
 
+// COUNTDOWN: enviar endAt (absoluto)
 btnSetCountdown.addEventListener("click", () => {
   const minutes = parseInt(countdownInput.value, 10);
   if (isNaN(minutes) || minutes < 0) return;
+
   const seconds = minutes * 60;
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "set", seconds }), { qos: 1, retain: false });
-  updatePreviewInstant(undefined, undefined, `${String(minutes).padStart(2,"0")}:00`);
+  const endAt = Date.now() + seconds * 1000;
+
+  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), ts: Date.now(), action: "set", endAt, seconds }), { qos: 1, retain: false });
+
+  // preview instant
+  previewEndAt = endAt;
+  previewRunning = false;
+  renderPreviewCountdown();
 });
 
 btnStartCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "start" }), { qos: 1, retain: false });
+  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), ts: Date.now(), action: "start" }), { qos: 1, retain: false });
+  previewRunning = true;
 });
 
 btnStopCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "stop" }), { qos: 1, retain: false });
+  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), ts: Date.now(), action: "stop" }), { qos: 1, retain: false });
+  previewRunning = false;
 });
 
 btnResetCountdown.addEventListener("click", () => {
-  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), action: "reset" }), { qos: 1, retain: false });
-  updatePreviewInstant(undefined, undefined, "--:--");
+  client.publish(TOPIC_COUNTDOWN, JSON.stringify({ id: uid(), ts: Date.now(), action: "reset" }), { qos: 1, retain: false });
+  previewEndAt = null;
+  previewRunning = false;
+  pCountdown.textContent = "--:--";
 });
 
 resetAllBtn.addEventListener("click", () => {
-  client.publish(TOPIC_RESET, JSON.stringify({ id: uid(), action: "resetAll" }), { qos: 1, retain: false });
-  updatePreviewInstant("Aguardando…", "Sem notas.", "--:--");
+  client.publish(TOPIC_RESET, JSON.stringify({ id: uid(), ts: Date.now(), action: "resetAll" }), { qos: 1, retain: false });
+
+  // preview instant
+  pMainMsg.textContent = "Aguardando…";
+  pNotesText.textContent = "Sem notas.";
+  previewEndAt = null;
+  previewRunning = false;
+  pCountdown.textContent = "--:--";
 });
