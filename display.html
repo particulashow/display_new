@@ -23,9 +23,9 @@
       display: grid;
       grid-template-columns: 0.6fr 2.8fr 0.6fr;
       grid-template-areas: "left center right";
+      overflow: hidden;
     }
 
-    /* LEFT */
     #left {
       grid-area: left;
       padding: 20px;
@@ -50,7 +50,6 @@
       padding-top: 15px;
     }
 
-    /* CENTER */
     #center {
       grid-area: center;
       display: flex;
@@ -69,13 +68,14 @@
       padding: 0;
       border-radius: 0;
       background: transparent;
+      overflow-wrap: anywhere;
     }
 
-    /* ALERTA mensagem (pisca vermelho só no center) */
-    .msg-bg-blink{
+    .msg-bg-blink {
       animation: msgBgBlink 3s linear forwards;
     }
-    @keyframes msgBgBlink{
+
+    @keyframes msgBgBlink {
       0%   { background-color: transparent; }
       10%  { background-color: var(--msg-alert); }
       20%  { background-color: transparent; }
@@ -89,7 +89,6 @@
       100% { background-color: transparent; }
     }
 
-    /* RIGHT – NOTAS */
     #right {
       grid-area: right;
       padding: 20px;
@@ -97,13 +96,14 @@
       flex-direction: column;
       gap: 10px;
       transition: background-color 0.2s;
+      overflow: hidden;
     }
 
     #notesTitle {
       font-weight: 700;
       font-size: 1.4vw;
       opacity: 0.85;
-      text-decoration: underline; /* ✅ sublinhado */
+      text-decoration: underline;
       text-underline-offset: 6px;
       text-decoration-thickness: 2px;
     }
@@ -111,12 +111,13 @@
     #notesText {
       font-size: 1.6vw;
       max-width: 90%;
+      overflow-wrap: anywhere;
     }
 
-    /* ALERTA NOTAS – pisca ~3s */
     .notes-bg-blink {
       animation: notesBgBlink 3s linear forwards;
     }
+
     @keyframes notesBgBlink {
       0%   { background-color: transparent; }
       10%  { background-color: var(--notes-alert); }
