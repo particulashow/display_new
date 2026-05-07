@@ -1,7 +1,13 @@
 const params = new URLSearchParams(location.search);
 const room = params.get("room") || "default";
 
-const BROKER = "wss://test.mosquitto.org:8081/mqtt";
+if (!window.mqtt) {
+  console.error("MQTT.js não carregou");
+  throw new Error("MQTT.js não carregou");
+}
+
+// Broker MQTT via WebSocket seguro
+const BROKER = "wss://broker.emqx.io:8084/mqtt";
 
 const TOPIC_MSG         = `speaker/messages/${room}`;
 const TOPIC_ACK         = `speaker/ack/${room}`;
@@ -17,7 +23,8 @@ const client = mqtt.connect(BROKER, {
   clean: true,
   reconnectPeriod: 2500,
   keepalive: 30,
-  resubscribe: true
+  resubscribe: true,
+  connectTimeout: 8000
 });
 
 // ELEMENTOS
@@ -86,7 +93,7 @@ function scheduleStatePublish(delay = 120) {
   }, delay);
 }
 
-// RELÓGIO + COUNTDOWN LOCAL
+// Relógio + countdown local
 setInterval(() => {
   clockEl.textContent = nowPT();
 
@@ -136,6 +143,22 @@ client.on("connect", () => {
   }), { qos: 1, retain: false });
 
   publishState();
+});
+
+client.on("reconnect", () => {
+  console.log("Display: a reconectar…");
+});
+
+client.on("close", () => {
+  console.log("Display: ligação perdida.");
+});
+
+client.on("offline", () => {
+  console.log("Display: servidor offline.");
+});
+
+client.on("error", (err) => {
+  console.error("MQTT error:", err);
 });
 
 client.on("message", (topic, payload) => {
